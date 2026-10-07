@@ -1,0 +1,100 @@
+#!/bin/bash
+set -euo pipefail
+
+repo="${1:-pocketgeek/tak-engine}"
+port="${2:-7677}"
+api="https://api.github.com/repos/${repo}/releases/latest"
+cache_dir="/var/cache/tak-engine"
+mkdir -p "$cache_dir"
+
+case "$(dpkg --print-architecture)" in
+  amd64) arch='amd64' ;;
+  arm64) arch='arm64' ;;
+  *) echo "Unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;;
+esac
+
+release_json="$(curl --fail --silent --show-error --location \
+  -H 'Accept: application/vnd.github+json' \
+  -H 'X-GitHub-Api-Version: 2022-11-28' \
+  "$api")"
+
+tag="$(jq -r '.tag_name' <<<"$release_json")"
+version="${tag#v}"
+asset="tak-engine-${version}-ubuntu24.04-${arch}.deb"
+url="$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .browser_download_url' <<<"$release_json")"
+digest="$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .digest // empty' <<<"$release_json")"
+
+if [[ -z "$tag" || "$tag" == "null" || -z "$url" || "$url" == "null" ]]; then
+  echo "Could not find Ubuntu 24.04 ${arch} asset for latest release of ${repo}" >&2
+  exit 1
+fi
+
+installed="$(dpkg-query -W -f='${Version}' tak-engine 2>/dev/null || true)"
+if [[ "$installed" == "$version" || "$installed" == "${version}-1" ]]; then
+  echo "tak-engine ${installed} already matches latest release ${tag}"
+  exit 0
+fi
+
+# Download and verify before deciding whether to interrupt the service. ThhÈ# the maintenance window as short as possible if the server is currently idle.
+deb="${cache_dir}/${asset}"
+tmp="${deb}.tmp"
+rm -f "$tmp"
+curl --fail --silent --show-error --location "$url" -o "$tmp"
+
+if [[ "$digest" == sha256:* ]]; then
+  expected="${digest#sha256:}"
+  actual="$(sha256sum "$tmp" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    rm -f "$tmp"
+    echo "SHA-256 mismatch for ${asset}" >&2
+    exit 1
+  fi
+fi
+
+mv "$tmp" "$deb"
+
+was_active=false
+if systemctl is-active --quiet takserver; then
+  was_active=true
+
+  # Current takserver builds expose a loopback-only status query. If the running
+  # binary is too old to support it, or the query fails for any reason, fail safe:
+  # leave the running server untouched and try again on a later Puppet run. An
+  # administrator can stop the service once to bootstrap from a pre-status build.
+  if ! status_json="$(/usr/bin/takserver --status --port "$port" 2>/dev/null)"; then
+    echo "TAK-Engine ${tag} is available, but the running server status could not be queried; upgrade deferred"
+    exit 0
+  fi
+
+  running_games="$(jq -er '.running_games | numbers' <<<"$status_json" 2>/dev/null || true)"
+  if [[ -z "$running_games" || ! "$running_games" =~ ^[0-9]+$ ]]; then
+    echo "TAK-Engine ${tag} is available, but running_games was not present in server status; upgrade deferred"
+    exit 0
+  fi
+
+  if (( running_games > 0 )); then
+    echo "TAK-Engine ${tag} is available, but ${running_games} game(s) are running; upgrade deferred"
+    exit 0
+  fi
+
+  echo "TAK-Engine ${tag} is available and no games are running; stopping takserver for upgrade"
+  systemctl stop takserver
+fi
+
+restart_if_needed() {
+  if [[ "$was_active" == true ]]; then
+    systemctl daemon-reload || true
+    systemctl start takserver || true
+  fi
+}
+trap restart_if_needed ERR
+
+DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb"
+systemctl daemon-reload
+
+if [[ "$was_active" == true ]]; then
+  systemctl start takserver
+fi
+trap - ERR
+
+echo "Installed tak-engine ${tag} from ${asset}"
