@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+check_only=false
+if [[ "${1:-}" == "--check" ]]; then
+  check_only=true
+  shift
+fi
+
 repo="${1:-pocketgeek/tak-engine}"
 port="${2:-7677}"
 api="https://api.github.com/repos/${repo}/releases/latest"
@@ -32,10 +38,19 @@ fi
 installed="$(dpkg-query -W -f='${Version}' tak-engine 2>/dev/null || true)"
 if [[ "$installed" == "$version" || "$installed" == "${version}-1" ]]; then
   echo "tak-engine ${installed} already matches latest release ${tag}"
+  if [[ "$check_only" == true ]]; then
+    exit 1
+  fi
   exit 0
 fi
 
-# Download and verify before deciding whether to interrupt the service. ThhÈ# the maintenance window as short as possible if the server is currently idle.
+if [[ "$check_only" == true ]]; then
+  echo "tak-engine upgrade available: ${installed:-not installed} -> ${tag}"
+  exit 0
+fi
+
+# Download and verify before deciding whether to interrupt the service. This keeps
+# the maintenance window as short as possible if the server is currently idle.
 deb="${cache_dir}/${asset}"
 tmp="${deb}.tmp"
 rm -f "$tmp"
