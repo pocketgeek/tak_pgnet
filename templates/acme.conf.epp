@@ -1,0 +1,64 @@
+<%- | String $acme_domain,
+      Boolean $acme_agree_tos,
+      String $acme_state,
+      String $data_dir,
+      String $accounts_file,
+      String $map_cache_dir,
+      String $replay_dir,
+      Integer $port,
+      Integer $max_games,
+      Integer $max_running_games,
+      Integer $max_accounts,
+      Integer $map_memory_mib,
+      Integer $map_storage_mib,
+      Integer $replay_memory_mib,
+      Integer $replay_storage_mib,
+      String $extra_args,
+      String $memory_max,
+      String $memory_swap_max,
+      Integer $tasks_max,
+      Integer $limit_nofile | -%>
+# Managed by Puppet. Local changes will be overwritten.
+[Service]
+Environment="TAK_SERVER_DATA=<%= $data_dir %>"
+Environment="TAK_SERVER_ACCOUNTS=<%= $accounts_file %>"
+Environment="TAK_SERVER_MAP_CACHE=<%= $map_cache_dir %>"
+Environment="TAK_SERVER_REPLAYS=<%= $replay_dir %>"
+Environment="TAK_SERVER_PORT=<%= $port %>"
+Environment="TAK_SERVER_MAX_GAMES=<%= $max_games %>"
+Environment="TAK_SERVER_MAX_RUNNING_GAMES=<%= $max_running_games %>"
+Environment="TAK_SERVER_MAX_ACCOUNTS=<%= $max_accounts %>"
+Environment="TAK_SERVER_MAP_MEMORY_MIB=<%= $map_memory_mib %>"
+Environment="TAK_SERVER_MAP_STORAGE_MIB=<%= $map_storage_mib %>"
+Environment="TAK_SERVER_REPLAY_MEMORY_MIB=<%= $replay_memory_mib %>"
+Environment="TAK_SERVER_REPLAY_STORAGE_MIB=<%= $replay_storage_mib %>"
+Environment="TAK_SERVER_EXTRA_ARGS=<%= $extra_args %>"
+
+LoadCredential=
+ExecStart=
+ExecStart=/usr/bin/takserver \\
+    --data ${TAK_SERVER_DATA} \\
+    --accounts ${TAK_SERVER_ACCOUNTS} \\
+    --map-cache-dir ${TAK_SERVER_MAP_CACHE} \\
+    --replaydir ${TAK_SERVER_REPLAYS} \\
+    --port ${TAK_SERVER_PORT} \\
+    --max-games ${TAK_SERVER_MAX_GAMES} \\
+    --max-running-games ${TAK_SERVER_MAX_RUNNING_GAMES} \\
+    --max-accounts ${TAK_SERVER_MAX_ACCOUNTS} \\
+    --map-memory-mib ${TAK_SERVER_MAP_MEMORY_MIB} \\
+    --map-storage-mib ${TAK_SERVER_MAP_STORAGE_MIB} \\
+    --replay-memory-mib ${TAK_SERVER_REPLAY_MEMORY_MIB} \\
+    --replay-storage-mib ${TAK_SERVER_REPLAY_STORAGE_MIB} \\
+    --acme-domain <%= $acme_domain %> \\
+<% if $acme_agree_tos { -%>
+    --acme-agree-tos \\
+<% } -%>
+    --acme-state <%= $acme_state %> \\
+    $TAK_SERVER_EXTRA_ARGS
+
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+MemoryMax=<%= $memory_max %>
+MemorySwapMax=<%= $memory_swap_max %>
+TasksMax=<%= $tasks_max %>
+LimitNOFILE=<%= $limit_nofile %>
