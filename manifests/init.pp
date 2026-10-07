@@ -47,6 +47,7 @@ class tak_pgnet (
 
   exec { 'install-latest-tak-engine-release':
     command     => "/usr/local/sbin/tak-engine-install-latest ${github_repo} ${port}",
+    onlyif      => "/usr/local/sbin/tak-engine-install-latest --check ${github_repo}",
     path        => ['/usr/bin', '/usr/sbin', '/bin', '/sbin'],
     timeout     => 600,
     logoutput   => on_failure,
